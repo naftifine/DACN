@@ -11,57 +11,20 @@ import hashlib
 load_dotenv()
 TOMTOM_KEY = os.getenv("TOMTOM_KEY")
 
-HCM_LAT_MIN, HCM_LAT_MAX = 10.3, 11.2
-HCM_LON_MIN, HCM_LON_MAX = 106.3, 107.1
-
 MAX_WORKERS = 30
 SEGMENT_LENGTH_KM = 0.5
-POINT_DISTANCE_KM = 5
+POINT_DISTANCE_KM = 0.5  # Khoảng cách tạo điểm dọc đường
 
-TRAFFIC_URL = "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
+TRAFFIC_URL = (
+    "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
+)
 REVERSE_URL = "https://api.tomtom.com/search/2/reverseGeocode/{lat},{lon}.json"
 SNAP_URL = "https://api.tomtom.com/snapToRoads/1/snapToRoads"
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 INCIDENT_URL = "https://api.tomtom.com/traffic/services/5/incidentDetails"
 
-def get_main_roads_in_hcm(limit=200):
-    url = "https://api.tomtom.com/search/2/categorySearch/majorRoad.json"
-    params = {
-        "key": TOMTOM_KEY,
-        "limit": limit,
-        "topLeft": f"{HCM_LAT_MAX},{HCM_LON_MIN}",
-        "btmRight": f"{HCM_LAT_MIN},{HCM_LON_MAX}"
-    }
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        data = r.json().get("results", [])
-        roads = []
-        for res in data:
-            address = res.get("address", {})
-            street = address.get("streetName")
-            pos = res.get("position", {})
-            if street and pos:
-                roads.append({"name": street, "lat": pos["lat"], "lon": pos["lon"]})
-        if roads:
-            return roads
-    except:
-        pass
-    url = "https://api.tomtom.com/search/2/search/Đường.json"
-    params["limit"] = limit
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        results = r.json().get("results", [])
-        roads = []
-        for res in results:
-            address = res.get("address", {})
-            street = address.get("streetName")
-            pos = res.get("position", {})
-            if street and pos:
-                roads.append({"name": street, "lat": pos["lat"], "lon": pos["lon"]})
-        return roads
-    except:
-        return []
 
+# --- Các hàm API ---
 def get_traffic(lat, lon):
     try:
         params = {"point": f"{lat},{lon}", "unit": "KMPH", "key": TOMTOM_KEY}
@@ -71,29 +34,19 @@ def get_traffic(lat, lon):
     except:
         return None
 
+
 def reverse_geocode(lat, lon):
     try:
-        r = requests.get(REVERSE_URL.format(lat=lat, lon=lon),
-                         params={"key": TOMTOM_KEY, "language": "vi-VN"}, timeout=5)
+        r = requests.get(
+            REVERSE_URL.format(lat=lat, lon=lon),
+            params={"key": TOMTOM_KEY, "language": "vi-VN"},
+            timeout=5,
+        )
         addr = r.json()["addresses"][0]["address"]
         return addr.get("streetName")
     except:
         return None
 
-def generate_points_along_line(start_lat, start_lon, end_lat, end_lon, distance_km=POINT_DISTANCE_KM):
-    points = [(start_lat, start_lon)]
-    start = (start_lat, start_lon)
-    end = (end_lat, end_lon)
-    total_distance = geodesic(start, end).km
-    if total_distance <= distance_km:
-        return [start, end]
-    steps = int(total_distance // distance_km)
-    lat_step = (end_lat - start_lat) / (steps + 1)
-    lon_step = (end_lon - start_lon) / (steps + 1)
-    for i in range(1, steps + 1):
-        points.append((start_lat + lat_step * i, start_lon + lon_step * i))
-    points.append(end)
-    return points
 
 def get_road_attributes(lat, lon):
     try:
@@ -101,19 +54,24 @@ def get_road_attributes(lat, lon):
         params = {
             "key": TOMTOM_KEY,
             "points": points_str,
-            "fields": "{route{properties{laneInfo{numberOfLanes},speedLimits{value,unit,type},id}}}"
+            "fields": "{route{properties{laneInfo{numberOfLanes},speedLimits{value,unit,type},id}}}",
         }
         r = requests.get(SNAP_URL, params=params, timeout=5)
         if r.status_code == 200:
             data = r.json()
             properties = data.get("route", {}).get("properties", {})
             lane_count = properties.get("laneInfo", {}).get("numberOfLanes")
-            speed_limit = properties.get("speedLimits", {}).get("value") if "speedLimits" in properties else None
+            speed_limit = (
+                properties.get("speedLimits", {}).get("value")
+                if "speedLimits" in properties
+                else None
+            )
             segment_id = properties.get("id")
             return segment_id, lane_count, speed_limit
     except:
         pass
     return None, None, None
+
 
 def get_speed_limit_osm(lat, lon):
     try:
@@ -122,31 +80,37 @@ def get_speed_limit_osm(lat, lon):
 way(around:50,{lat},{lon})[highway][maxspeed];
 out body;
 """
-        r = requests.post(OVERPASS_URL, data={'data': query}, timeout=5)
+        r = requests.post(OVERPASS_URL, data={"data": query}, timeout=5)
         if r.status_code == 200:
             data = r.json()
-            if 'elements' in data and data['elements']:
-                for elem in data['elements']:
-                    if 'tags' in elem and 'maxspeed' in elem['tags']:
-                        maxspeed_str = elem['tags']['maxspeed']
+            if "elements" in data and data["elements"]:
+                for elem in data["elements"]:
+                    if "tags" in elem and "maxspeed" in elem["tags"]:
+                        maxspeed_str = elem["tags"]["maxspeed"]
                         if maxspeed_str.isdigit():
                             return int(maxspeed_str)
-                        elif 'km/h' in maxspeed_str or 'kph' in maxspeed_str:
-                            return int(maxspeed_str.replace(' km/h', '').replace(' kph', ''))
-                        elif 'mph' in maxspeed_str:
-                            return int(maxspeed_str.replace(' mph', '')) * 1.60934
+                        elif "km/h" in maxspeed_str or "kph" in maxspeed_str:
+                            return int(
+                                maxspeed_str.replace(" km/h", "").replace(" kph", "")
+                            )
+                        elif "mph" in maxspeed_str:
+                            return int(maxspeed_str.replace(" mph", "")) * 1.60934
         return None
     except:
         return None
 
+
 def get_incidents():
     try:
+        # Vùng HCM, thay nếu cần
+        HCM_LAT_MIN, HCM_LAT_MAX = 10.3, 11.2
+        HCM_LON_MIN, HCM_LON_MAX = 106.3, 107.1
         params = {
             "key": TOMTOM_KEY,
             "bbox": f"{HCM_LON_MIN},{HCM_LAT_MIN},{HCM_LON_MAX},{HCM_LAT_MAX}",
             "fields": "{incidents{type,geometry{type,coordinates},properties{id,iconCategory,magnitudeOfDelay,events{description,code},startTime,endTime,from,to,length,delay,roadNumbers,timeValidity}}}",
             "language": "vi-VN",
-            "timeValidityFilter": "present"
+            "timeValidityFilter": "present",
         }
         r = requests.get(INCIDENT_URL, params=params, timeout=10)
         if r.status_code == 200:
@@ -154,6 +118,7 @@ def get_incidents():
     except:
         pass
     return []
+
 
 def is_incident_near(lat, lon, incidents, threshold_km=0.5):
     point = (lat, lon)
@@ -171,9 +136,47 @@ def is_incident_near(lat, lon, incidents, threshold_km=0.5):
                     return 1
     return 0
 
-def process_road(road, incidents):
-    points = generate_points_along_line(road["lat"], road["lon"],
-                                        road["lat"]+0.01, road["lon"]+0.01)
+
+# --- Hàm phụ trợ ---
+def generate_points_along_line(
+    start_lat, start_lon, end_lat, end_lon, distance_km=POINT_DISTANCE_KM
+):
+    points = [(start_lat, start_lon)]
+    start = (start_lat, start_lon)
+    end = (end_lat, end_lon)
+    total_distance = geodesic(start, end).km
+    if total_distance <= distance_km:
+        return [start, end]
+    steps = int(total_distance // distance_km)
+    lat_step = (end_lat - start_lat) / (steps + 1)
+    lon_step = (end_lon - start_lon) / (steps + 1)
+    for i in range(1, steps + 1):
+        points.append((start_lat + lat_step * i, start_lon + lon_step * i))
+    points.append(end)
+    return points
+
+
+def compute_traffic_volume(current_speed, free_flow_speed, lane_count):
+    """
+    Công thức giả lập traffic volume (vehicles/h)
+    VD: volume = lane_count * free_flow_speed * factor
+    """
+    if current_speed <= 0 or free_flow_speed <= 0:
+        return 0
+    factor = 0.8  # Tùy chỉnh
+    return round(lane_count * free_flow_speed * factor)
+
+
+# --- Xử lý từng dòng đường ---
+def process_road(row, incidents):
+    # Lấy tọa độ start và end
+    start_lat = row["lat_snode"]
+    start_lon = row["long_snode"]
+    end_lat = row["lat_enode"]
+    end_lon = row["long_enode"]
+
+    points = generate_points_along_line(start_lat, start_lon, end_lat, end_lon)
+
     speeds, free_speeds, jams = [], [], []
     name_vn_list = []
     frc = None
@@ -213,18 +216,33 @@ def process_road(road, incidents):
     if not speeds:
         return None
 
-    current_speed_avg = sum(speeds)/len(speeds)
-    free_flow_speed_avg = sum(free_speeds)/len(free_speeds) if free_speeds else current_speed_avg
+    current_speed_avg = sum(speeds) / len(speeds)
+    free_flow_speed_avg = (
+        sum(free_speeds) / len(free_speeds) if free_speeds else current_speed_avg
+    )
     valid_jams = [j for j in jams if j is not None]
-    congestion_index = current_speed_avg / free_flow_speed_avg if free_flow_speed_avg else 1.0
-    cross_time = SEGMENT_LENGTH_KM / current_speed_avg * 3600 if current_speed_avg else None
+    congestion_index = (
+        current_speed_avg / free_flow_speed_avg if free_flow_speed_avg else 1.0
+    )
+    cross_time = (
+        SEGMENT_LENGTH_KM / current_speed_avg * 3600 if current_speed_avg else None
+    )
 
-    name_vn = max(set(name_vn_list), key=name_vn_list.count) if name_vn_list else road["name"]
-    lane_count_avg = sum(lane_counts)/len(lane_counts) if lane_counts else 1
-    speed_limit_avg = sum(speed_limits)/len(speed_limits) if speed_limits else 50
+    name_vn = (
+        max(set(name_vn_list), key=name_vn_list.count)
+        if name_vn_list
+        else row["street_name"]
+    )
+    lane_count_avg = sum(lane_counts) / len(lane_counts) if lane_counts else 1
+    speed_limit_avg = sum(speed_limits) / len(speed_limits) if speed_limits else 50
     incident_flag = 1 if any(incident_flags) else 0
-    segment_id = max(set(segment_ids), key=segment_ids.count) if segment_ids else hashlib.md5(road["name"].encode()).hexdigest()
+    segment_id = (
+        max(set(segment_ids), key=segment_ids.count)
+        if segment_ids
+        else hashlib.md5(row["street_name"].encode()).hexdigest()
+    )
 
+    # LOS
     if congestion_index >= 0.9:
         los = "A"
     elif congestion_index >= 0.7:
@@ -238,22 +256,21 @@ def process_road(road, incidents):
     else:
         los = "F"
 
-    # Timestamp yymmddhhmm
     timestamp = datetime.now().strftime("%y%m%d%H%M")
     day_of_week = datetime.now().weekday()
 
     return {
         "segmentId": segment_id,
-        "name": road["name"],
+        "name": row["street_name"],
         "name_vn": name_vn,
-        "lat": road["lat"],
-        "lon": road["lon"],
+        "lat": start_lat,
+        "lon": start_lon,
         "roadType": frc,
         "laneCount": lane_count_avg,
         "frc": frc,
         "currentSpeed": current_speed_avg,
         "freeFlowSpeed": free_flow_speed_avg,
-        "jamFactor": sum(valid_jams)/len(valid_jams) if valid_jams else 0,
+        "jamFactor": sum(valid_jams) / len(valid_jams) if valid_jams else 0,
         "congestionIndex": congestion_index,
         "crossTime": cross_time,
         "trafficVolume": "NA",
@@ -262,20 +279,29 @@ def process_road(road, incidents):
         "incidentFlag": incident_flag,
         "LOS": los,
         "timeStamp": timestamp,
-        "dayOfWeek": day_of_week
+        "dayOfWeek": day_of_week,
     }
 
+
+# --- Main ---
 if __name__ == "__main__":
-    incidents = get_incidents()
-    roads = get_main_roads_in_hcm(limit=200)
-    if not roads:
-        print("No roads found")
+    input_file = "streets_merged.csv"  # CSV có sẵn
+    output_file = "../data/traffic/traffic_hcm.csv"
+
+    df_roads = pd.read_csv(input_file)
+    if df_roads.empty:
+        print("No roads in CSV")
         exit()
 
+    incidents = get_incidents()
     traffic_data = []
+
     start_time = time.time()
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = [executor.submit(process_road, road, incidents) for road in roads]
+        futures = [
+            executor.submit(process_road, row, incidents)
+            for _, row in df_roads.iterrows()
+        ]
         for future in as_completed(futures):
             result = future.result()
             if result:
@@ -286,35 +312,13 @@ if __name__ == "__main__":
         print("No traffic data collected")
         exit()
 
-    df = df.groupby("name", as_index=False).agg({
-        "segmentId": "first",
-        "name_vn": "first",
-        "lat": "first",
-        "lon": "first",
-        "roadType": "first",
-        "laneCount": "mean",
-        "frc": "first",
-        "currentSpeed": "mean",
-        "freeFlowSpeed": "mean",
-        "jamFactor": "mean",
-        "congestionIndex": "mean",
-        "crossTime": "mean",
-        "trafficVolume": "first",
-        "occupancy": "first",
-        "speedLimit": "mean",
-        "incidentFlag": "max",
-        "LOS": "first",
-        "timeStamp": "first",
-        "dayOfWeek": "first"
-    })
-
-
-    output_file = "../data/traffic/traffic_hcm.csv"
-
+    # Nếu file cũ tồn tại, ghép dữ liệu và loại trùng
     if os.path.exists(output_file):
         df_existing = pd.read_csv(output_file, encoding="utf-8-sig")
         df = pd.concat([df_existing, df], ignore_index=True)
         df.drop_duplicates(subset=["segmentId", "timeStamp"], keep="last", inplace=True)
 
     df.to_csv(output_file, index=False, encoding="utf-8-sig")
-    print(f"Traffic data saved/appended to {output_file}")
+    print(
+        f"Traffic data saved/appended to {output_file} in {time.time() - start_time:.2f}s"
+    )
