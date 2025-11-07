@@ -129,12 +129,20 @@ def parse_traffic_timestamp(value: object) -> Optional[dt.datetime]:
         text = text[:-2]
 
     text = text.split(".")[0]
+    # ensure at least 10 chars (pad with leading zeros if needed)
     text = text.zfill(10)
 
-    try:
-        return dt.datetime.strptime(text, "%y%m%d%H%M")
-    except ValueError:
-        return None
+    # Try common formats. Prefer yy-mm-dd order (yymmddhhmm) because many files encode
+    # timestamps as yymmddhhmm (e.g. 2511070819 -> 2025-11-07 08:19). Fall back to
+    # ddmmyyhhmm if that better matches the input.
+    for fmt in ("%y%m%d%H%M", "%d%m%y%H%M"):
+        try:
+            return dt.datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+
+    # If none matched, return None
+    return None
 
 
 def safe_float(value: Optional[str]) -> Optional[float]:
@@ -227,8 +235,31 @@ def collect_weather_from_traffic(traffic_path: Path, output_path: Path) -> None:
     total = len(rows)
 
     for idx, row in enumerate(rows, start=1):
-        lat = safe_float(row.get("lat"))
-        lon = safe_float(row.get("lon"))
+        # Try several common coordinate column names found in traffic CSVs
+        lat_candidates = ["lat", "latitude", "lat_start", "latitude_start"]
+        lon_candidates = ["lon", "longitude", "lon_start", "longitude_start"]
+
+        lat = None
+        lon = None
+        used_coord = None
+        for la in lat_candidates:
+            for lo in lon_candidates:
+                lat_val = safe_float(row.get(la))
+                lon_val = safe_float(row.get(lo))
+                if lat_val is not None and lon_val is not None:
+                    lat = lat_val
+                    lon = lon_val
+                    used_coord = (la, lo)
+                    break
+            if lat is not None:
+                break
+
+        if lat is None or lon is None:
+            # also try end coordinates if start not present
+            lat = safe_float(row.get("lat_end"))
+            lon = safe_float(row.get("lon_end"))
+            if lat is not None and lon is not None:
+                used_coord = ("lat_end", "lon_end")
 
         if lat is None or lon is None:
             print(f"⚠️  Bỏ qua hàng {idx} vì thiếu tọa độ cho đường {row.get('name')}")
