@@ -20,7 +20,7 @@ import seaborn as sns
 # 1. LOAD DATA
 # ======================
 
-csv_path = "data_1107_edited.csv"
+csv_path = "data/traffic/data_1107_edited.csv"
 df = pd.read_csv(csv_path)
 
 print("Shape:", df.shape)

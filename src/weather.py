@@ -53,8 +53,8 @@ FORECAST_BASE_URL = "https://api.open-meteo.com/v1/forecast"
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR.parent / "data"
-DEFAULT_TRAFFIC_FILE = DATA_DIR / "traffic" / "traffic_hcm_updated.csv"
-DEFAULT_OUTPUT_FILE = DATA_DIR / "weather" / "weather_updated.csv"
+DEFAULT_TRAFFIC_FILE = DATA_DIR / "traffic" / "data_1107_edited.csv"
+DEFAULT_OUTPUT_FILE = DATA_DIR / "weather" / "weather_1107.csv"
 
 WEATHER_OUTPUT_COLUMNS: List[str] = [
     "name",
