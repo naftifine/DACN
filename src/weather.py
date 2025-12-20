@@ -53,8 +53,8 @@ FORECAST_BASE_URL = "https://api.open-meteo.com/v1/forecast"
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR.parent / "data"
-DEFAULT_TRAFFIC_FILE = DATA_DIR / "traffic" / "data_1107_edited.csv"
-DEFAULT_OUTPUT_FILE = DATA_DIR / "weather" / "weather_1107.csv"
+DEFAULT_TRAFFIC_FILE = DATA_DIR / "traffic" / "traffic_hcm_12_10.csv"
+DEFAULT_OUTPUT_FILE = DATA_DIR / "weather" / "weather_hcm_12_10.csv"
 
 WEATHER_OUTPUT_COLUMNS: List[str] = [
     "name",
@@ -269,18 +269,21 @@ def collect_weather_from_traffic(traffic_path: Path, output_path: Path) -> None:
         dt_value = parse_traffic_timestamp(timestamp_raw)
         if dt_value is None:
             dt_value = dt.datetime.now()
-        date_str = dt_value.strftime("%Y-%m-%d")
+        # date_only_str dùng để call API (đúng format YYYY-MM-DD)
+        date_only_str = dt_value.strftime("%Y-%m-%d")
+        # date_time_str dùng để lưu vào cột weather_date (YYYY-MM-DD-HH-MM)
+        date_time_str = dt_value.strftime("%Y-%m-%d-%H-%M")
 
         rounded_lat = round(lat, 4)
         rounded_lon = round(lon, 4)
-        cache_key = (rounded_lat, rounded_lon, date_str)
+        cache_key = (rounded_lat, rounded_lon, date_only_str)
 
         weather_values: Optional[Dict]
         units: Dict[str, str]
 
         cached_entry = cache.get(cache_key)
         if cached_entry is None:
-            payload = fetch_daily_weather(session, rounded_lat, rounded_lon, date_str)
+            payload = fetch_daily_weather(session, rounded_lat, rounded_lon, date_only_str)
             if payload:
                 weather_values, units = extract_daily_values(payload)
             else:
@@ -291,7 +294,8 @@ def collect_weather_from_traffic(traffic_path: Path, output_path: Path) -> None:
             weather_values, units = cached_entry
 
         row_data: Dict[str, object] = dict(row)
-        row_data["weather_date"] = date_str
+        # Cột weather_date chứa cả ngày và giờ-phút (YYYY-MM-DD-HH-MM)
+        row_data["weather_date"] = date_time_str
         row_data["latitude_lookup"] = rounded_lat
         row_data["longitude_lookup"] = rounded_lon
 
