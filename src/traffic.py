@@ -24,7 +24,7 @@ OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 INCIDENT_URL = "https://api.tomtom.com/traffic/services/5/incidentDetails"
 
 
-# --- Các hàm API ---
+# --- API Helpers ---
 def get_traffic(lat, lon):
     try:
         params = {"point": f"{lat},{lon}", "unit": "KMPH", "key": TOMTOM_KEY}
@@ -48,29 +48,148 @@ def reverse_geocode(lat, lon):
         return None
 
 
+import requests
+from time import sleep
+
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+# --- (2) get_lane_count_osm: lấy tag 'lanes' từ OSM quanh điểm ---
+def get_lane_count_osm(lat, lon, radius=30, tries=2):
+    """
+    Tra cứu tag 'lanes' của way OSM quanh điểm (lat, lon).
+    Trả về int nếu tìm thấy, else None.
+    radius: bán kính tìm kiếm (m)
+    tries: số lần thử khi Overpass timeouts
+    """
+    query = f"""
+[out:json][timeout:25];
+way(around:{radius},{lat},{lon})[highway];
+out tags;
+"""
+    for attempt in range(tries):
+        try:
+            r = requests.post(OVERPASS_URL, data={"data": query}, timeout=15)
+            r.raise_for_status()
+            data = r.json()
+            if "elements" in data and data["elements"]:
+                for elem in data["elements"]:
+                    tags = elem.get("tags", {})
+                    # ưu tiên tag 'lanes'
+                    if "lanes" in tags:
+                        val = tags["lanes"].strip()
+                        # có thể là '2;2' hoặc '2' hoặc '2 lanes' -> lấy số đầu
+                        num = ''.join(ch for ch in val if (ch.isdigit() or ch in "/,;"))
+                        if num:
+                            # lấy chữ số đầu tiên của chuỗi (ví dụ '2/1' -> 2)
+                            try:
+                                return int(num.split('/')[0].split(',')[0].split(';')[0])
+                            except:
+                                continue
+                    # nếu chỉ có lanes:forward/backward -> cộng lại
+                    if "lanes:forward" in tags or "lanes:backward" in tags:
+                        try:
+                            f = int(tags.get("lanes:forward", 0))
+                            b = int(tags.get("lanes:backward", 0))
+                            tot = f + b
+                            if tot > 0:
+                                return tot
+                        except:
+                            pass
+            return None
+        except Exception as e:
+            # retry nhẹ nếu lỗi mạng hoặc timeout
+            print(f"[OSM lanes] attempt {attempt+1} error: {e}")
+            sleep(1)
+    return None
+
+
+# --- (3) Cải thiện get_road_attributes: thử TomTom trước, fallback OSM ---
 def get_road_attributes(lat, lon):
+    """
+    Thử lấy thông tin từ TomTom (snapToRoads / road attributes).
+    Nếu không lấy được 'numberOfLanes', fallback sang OSM (get_lane_count_osm).
+    Trả về: (segment_id, lane_count (int|None), speed_limit (int|None))
+    """
+    # small helper để parse response an toàn
+    def safe_get(dct, *keys):
+        cur = dct
+        for k in keys:
+            if not isinstance(cur, dict):
+                return None
+            cur = cur.get(k)
+            if cur is None:
+                return None
+        return cur
+
     try:
-        points_str = f"{lon},{lat};{lon + 0.0001},{lat}"
+        # Gọi TomTom Snap (hoặc thay bằng endpoint Road Attributes nếu bạn có)
+        # lưu ý: snapToRoads có thể không trả các thuộc tính bạn mong -> phải kiểm tra
+        points_str = f"{lon},{lat};{lon + 0.0005},{lat + 0.0005}"
         params = {
             "key": TOMTOM_KEY,
             "points": points_str,
-            "fields": "{route{properties{laneInfo{numberOfLanes},speedLimits{value,unit,type},id}}}",
         }
-        r = requests.get(SNAP_URL, params=params, timeout=5)
-        if r.status_code == 200:
+        r = requests.get(SNAP_URL, params=params, timeout=8)
+        if r.status_code != 200:
+            print("[TomTom] snapToRoads status:", r.status_code, r.text[:200])
+        else:
             data = r.json()
-            properties = data.get("route", {}).get("properties", {})
-            lane_count = properties.get("laneInfo", {}).get("numberOfLanes")
-            speed_limit = (
-                properties.get("speedLimits", {}).get("value")
-                if "speedLimits" in properties
-                else None
-            )
-            segment_id = properties.get("id")
+            # debug: nếu cần in kết cấu trả về để xác định trường chứa laneInfo
+            # print(json.dumps(data, indent=2))
+            # Nhiều SDK trả 'route' hoặc 'snapPoints' - xử lý an toàn:
+            # Thử lấy ở nhiều vị trí có thể:
+            lane_count = None
+            speed_limit = None
+            segment_id = None
+
+            # cố gắng lấy laneInfo từ route.properties (nếu có)
+            props = safe_get(data, "route", "properties") or safe_get(data, "route")
+            if isinstance(props, dict):
+                lane_count = safe_get(props, "laneInfo", "numberOfLanes")
+                # parse to int nếu cần
+                if lane_count is not None:
+                    try:
+                        lane_count = int(lane_count)
+                    except:
+                        lane_count = None
+                # speedLimits có thể là dict hoặc list
+                sl = props.get("speedLimits")
+                if isinstance(sl, dict):
+                    speed_limit = sl.get("value")
+                elif isinstance(sl, list) and sl:
+                    speed_limit = sl[0].get("value")
+                segment_id = props.get("id") or props.get("segmentId")
+
+            # nếu không có lane_count, thử tìm trong snapPoints (tùy response)
+            if lane_count is None:
+                snapped = data.get("snappedPoints") or data.get("snapped_points") or []
+                for sp in snapped:
+                    sp_props = sp.get("properties") or sp.get("attributes") or {}
+                    lc = sp_props.get("numberOfLanes") or sp_props.get("lanes")
+                    if lc:
+                        try:
+                            lane_count = int(lc)
+                            break
+                        except:
+                            continue
+
+            # Nếu TomTom không trả lane_count -> fallback OSM
+            if lane_count is None:
+                lane_count = get_lane_count_osm(lat, lon)
+
+            # Nếu TomTom không trả speed limit -> fallback OSM
+            if speed_limit is None:
+                speed_limit = get_speed_limit_osm(lat, lon)
+
             return segment_id, lane_count, speed_limit
-    except:
-        pass
-    return None, None, None
+
+    except Exception as e:
+        print("[get_road_attributes] error calling TomTom:", e)
+
+    # cuối cùng: fallback hoàn toàn sang OSM nếu TomTom bị lỗi
+    lane_osm = get_lane_count_osm(lat, lon)
+    speed_osm = get_speed_limit_osm(lat, lon)
+    return None, lane_osm, speed_osm
 
 
 def get_speed_limit_osm(lat, lon):
@@ -102,7 +221,7 @@ out body;
 
 def get_incidents():
     try:
-        # Vùng HCM, thay nếu cần
+        # Vùng HCM
         HCM_LAT_MIN, HCM_LAT_MAX = 10.3, 11.2
         HCM_LON_MIN, HCM_LON_MAX = 106.3, 107.1
         params = {
@@ -137,7 +256,7 @@ def is_incident_near(lat, lon, incidents, threshold_km=0.5):
     return 0
 
 
-# --- Hàm phụ trợ ---
+# --- Helper functions ---
 def generate_points_along_line(
     start_lat, start_lon, end_lat, end_lon, distance_km=POINT_DISTANCE_KM
 ):
@@ -156,20 +275,45 @@ def generate_points_along_line(
     return points
 
 
-def compute_traffic_volume(current_speed, free_flow_speed, lane_count):
-    """
-    Công thức giả lập traffic volume (vehicles/h)
-    VD: volume = lane_count * free_flow_speed * factor
-    """
-    if current_speed <= 0 or free_flow_speed <= 0:
-        return 0
-    factor = 0.8  # Tùy chỉnh
-    return round(lane_count * free_flow_speed * factor)
+def get_base_capacity_by_frc(frc):
+    if frc is None:
+        return 1800
+    capacity_map = {
+        0: 2400,
+        1: 2200,
+        2: 2000,
+        3: 1700,
+        4: 1200,
+        5: 1000,
+        6: 1000,
+        7: 1000,
+        8: 1000,
+    }
+    if isinstance(frc, str):
+        if frc.upper().startswith("FRC"):
+            try:
+                frc_num = int(frc[3:])
+                return capacity_map.get(frc_num, 1800)
+            except:
+                return 1800
+    return capacity_map.get(frc, 1800)
 
 
-# --- Xử lý từng dòng đường ---
+def estimate_traffic_volume(current_speed_kmph, freeflow_kmph, lane_count, frc=None):
+    if current_speed_kmph is None or freeflow_kmph is None:
+        utilization = 0.5
+    else:
+        congestion_index = (
+            current_speed_kmph / freeflow_kmph if freeflow_kmph > 0 else 1.0
+        )
+        utilization = max(0.05, min(1.0, 1.2 - congestion_index))
+    lane_count = max(1, lane_count or 1)
+    base_capacity = get_base_capacity_by_frc(frc)
+    return round(base_capacity * lane_count * utilization, 2)
+
+
+# --- Process each road ---
 def process_road(row, incidents):
-    # Lấy tọa độ start và end
     start_lat = row["lat_snode"]
     start_lon = row["long_snode"]
     end_lat = row["lat_enode"]
@@ -256,6 +400,16 @@ def process_road(row, incidents):
     else:
         los = "F"
 
+    # --- Traffic volume & occupancy ---
+    traffic_volume = estimate_traffic_volume(
+        current_speed_avg, free_flow_speed_avg, lane_count_avg, frc=frc
+    )
+    occupancy = (
+        100 * (1 - current_speed_avg / free_flow_speed_avg)
+        if free_flow_speed_avg
+        else 0
+    )
+
     timestamp = datetime.now().strftime("%y%m%d%H%M")
     day_of_week = datetime.now().weekday()
 
@@ -273,8 +427,8 @@ def process_road(row, incidents):
         "jamFactor": sum(valid_jams) / len(valid_jams) if valid_jams else 0,
         "congestionIndex": congestion_index,
         "crossTime": cross_time,
-        "trafficVolume": "NA",
-        "occupancy": "NA",
+        "trafficVolume": traffic_volume,
+        "occupancy": occupancy,
         "speedLimit": speed_limit_avg,
         "incidentFlag": incident_flag,
         "LOS": los,
@@ -285,7 +439,7 @@ def process_road(row, incidents):
 
 # --- Main ---
 if __name__ == "__main__":
-    input_file = "streets_merged.csv"  # CSV có sẵn
+    input_file = "../data/traffic/streets_merged.csv"  
     output_file = "../data/traffic/traffic_hcm.csv"
 
     df_roads = pd.read_csv(input_file)
