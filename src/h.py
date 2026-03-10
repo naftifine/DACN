@@ -35,7 +35,9 @@ MAPBOX_KEY = os.getenv("MAPBOX_KEY")
 
 
 INPUT_FILE = "../data/traffic/streets_merged.csv"
-OUTPUT_FILE = "../data/traffic/traffic_hcm.csv"
+timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+
+OUTPUT_FILE = f"../DATN/traffic_hcm_{timestamp}.csv"
 STATIC_FILE = "../data/traffic/traffic_static.csv"
 
 MAX_CONCURRENT = 20
@@ -720,6 +722,28 @@ async def run_dynamic_collection():
     dup_cols = ["mapbox_avg_speed", "mapbox_lane_count"]
     df_full.drop(
         columns=[c for c in dup_cols if c in df_full.columns],
+        inplace=True,
+        errors="ignore",
+    )
+    cols_always_empty = [
+        "width",
+        "busRoute",
+        "bicycleLane",
+        "sidewalk",
+        "bridgeTunnel",
+        "maxHeight",
+        "maxWeight",
+        "barrier",
+        "lit",
+        "crossing",
+        "route_distance_m",
+        "route_duration_sec",
+        "route_weight",
+        "congestion_levels",
+        "map_match_confidence",
+    ]
+    df_full.drop(
+        columns=[c for c in cols_always_empty if c in df_full.columns],
         inplace=True,
         errors="ignore",
     )
