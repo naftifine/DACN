@@ -56,9 +56,9 @@ ARCHIVE_BASE_URL = "https://archive-api.open-meteo.com/v1/archive"
 ARCHIVE_UNSUPPORTED_PARAMS = {"precipitation_probability_max"}
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR.parent / "data"
-DEFAULT_TRAFFIC_FILE = DATA_DIR / "traffic" / "traffic_static.csv"
-DEFAULT_OUTPUT_FILE = DATA_DIR / "weather" / "weather_static.csv"
+DATA_DIR = BASE_DIR.parent / "DATN"
+DEFAULT_TRAFFIC_FILE = DATA_DIR / "traffic_hcm_20260311_1708.csv"
+DEFAULT_OUTPUT_FILE = DATA_DIR / "weather" / "weather_hcm_20260311_1708.csv"
 
 WEATHER_OUTPUT_COLUMNS: List[str] = [
     "name",
@@ -177,7 +177,7 @@ def fetch_daily_weather(
     """Lấy dữ liệu thời tiết hàng ngày từ Open-Meteo."""
     query_date = dt.datetime.strptime(date_str, "%Y-%m-%d").date()
     today = dt.date.today()
-    is_archive = query_date < today
+    is_archive = False  # Disabled archive API
 
     if is_archive:
         base_url = ARCHIVE_BASE_URL
