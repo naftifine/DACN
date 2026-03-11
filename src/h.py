@@ -33,6 +33,10 @@ TOMTOM_KEY = os.getenv("TOMTOM_KEY")
 HERE_KEY = os.getenv("HERE_KEY")
 MAPBOX_KEY = os.getenv("MAPBOX_KEY")
 
+print("API Keys loaded:")
+print("TOMTOM_KEY:", TOMTOM_KEY[:4] + "****" if TOMTOM_KEY else "TOMTOM_KEY not set")
+print("HERE_KEY:", HERE_KEY[:4] + "****" if HERE_KEY else "HERE_KEY not set")
+print("MAPBOX_KEY:", MAPBOX_KEY[:4] + "****" if MAPBOX_KEY else "MAPBOX_KEY not set")
 
 INPUT_FILE = "../data/traffic/streets_merged.csv"
 timestamp = datetime.now().strftime("%Y%m%d_%H%M")
