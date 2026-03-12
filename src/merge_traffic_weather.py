@@ -3,11 +3,13 @@ import os
 from datetime import datetime
 
 # === CẤU HÌNH ===
-DATA_DIR = r"c:\Users\Naftin\Desktop\DATN\DACN\data"
-DATN_DIR = r"c:\Users\Naftin\Desktop\DATN\DACN\DATN"
+# Lấy thư mục gốc của project (thư mục cha của src/)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+DATN_DIR = os.path.join(BASE_DIR, 'DATN')
 
-TRAFFIC_FILE = os.path.join(DATN_DIR, 'traffic_hcm_20260310_0945.csv')
-WEATHER_FILE = os.path.join(DATN_DIR, 'weather', 'weather_hcm_20260310_0945.csv')
+TRAFFIC_FILE = os.path.join(DATN_DIR, 'traffic_hcm_20260311_1908.csv')
+WEATHER_FILE = os.path.join(DATN_DIR, 'weather', 'weather_hcm_20260311_1908.csv')
 OUTPUT_DIR = os.path.join(DATA_DIR, 'traffic_weather')
 
 def merge_traffic_weather(traffic_path, weather_path, output_dir):
