@@ -8,8 +8,8 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 DATN_DIR = os.path.join(BASE_DIR, 'DATN')
 
-TRAFFIC_FILE = os.path.join(DATN_DIR, 'traffic_hcm_20260311_1908.csv')
-WEATHER_FILE = os.path.join(DATN_DIR, 'weather', 'weather_hcm_20260311_1908.csv')
+TRAFFIC_FILE = os.path.join(DATN_DIR, 'traffic_hcm_20260312_2010.csv')
+WEATHER_FILE = os.path.join(DATN_DIR, 'weather', 'weather_hcm_20260312_2010.csv')
 OUTPUT_DIR = os.path.join(DATA_DIR, 'traffic_weather')
 
 def merge_traffic_weather(traffic_path, weather_path, output_dir):
