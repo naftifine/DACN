@@ -57,8 +57,11 @@ ARCHIVE_UNSUPPORTED_PARAMS = {"precipitation_probability_max"}
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR.parent / "DATN"
-DEFAULT_TRAFFIC_FILE = DATA_DIR / "traffic_hcm_20260312_2010.csv"
-DEFAULT_OUTPUT_FILE = DATA_DIR / "weather" / "weather_hcm_20260312_2010.csv"
+
+TIMESTAMP = "20260314_0011"
+
+DEFAULT_TRAFFIC_FILE = DATA_DIR / f"traffic_hcm_{TIMESTAMP}.csv"
+DEFAULT_OUTPUT_FILE  = DATA_DIR / "weather" / f"weather_hcm_{TIMESTAMP}.csv"
 
 WEATHER_OUTPUT_COLUMNS: List[str] = [
     "name",
