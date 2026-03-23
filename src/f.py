@@ -66,4 +66,4 @@ if __name__ == "__main__":
         while True:
             rotate_key()
             run_job()
-            time.sleep(1800)
+            time.sleep(900)
