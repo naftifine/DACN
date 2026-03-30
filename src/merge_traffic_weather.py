@@ -8,7 +8,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 DATN_DIR = os.path.join(BASE_DIR, 'DATN')
 
-FILE_TIME = '20260326_1610'  # Cập nhật thời gian file traffic và weather mới nhất ở đây
+FILE_TIME = '20260330_0728'  # Cập nhật thời gian file traffic và weather mới nhất ở đây
 
 TRAFFIC_FILE = os.path.join(DATN_DIR, f'traffic_hcm_{FILE_TIME}.csv')
 WEATHER_FILE = os.path.join(DATN_DIR, 'weather', f'weather_hcm_{FILE_TIME}.csv')
